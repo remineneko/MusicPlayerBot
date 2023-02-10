@@ -6,7 +6,7 @@ from constants.exceptions import *
 import os
 import logging
 
-ENVIRONMENT_NAME = 'EMOTE_DISCORD_BOT_API_KEY'
+ENVIRONMENT_NAME = 'MUSIC_DISCORD_BOT_API_KEY'
 
 
 class BotConfig:
