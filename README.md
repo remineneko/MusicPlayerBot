@@ -21,5 +21,3 @@
  # Works in progress
 
  - [ ] Adding a seek() functionality so that the bot will play an audio from the seeked location.
-
- - [ ] Refactor the code in player.py, remove code smells.
