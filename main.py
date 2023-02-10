@@ -12,7 +12,7 @@ bot.remove_command('help')
 client = discord.Client(intents = intents)
 
 extensions = [f"src.cogs.{path.stem}" for path in Path('src/cogs').glob('*.py')]
-
+extensions.append('src.cogs.player')
 
 @bot.event
 async def on_ready():
