@@ -1,0 +1,6 @@
+discord.py
+yt_dlp
+PyNaCl
+wheel
+ffmpeg
+pip
