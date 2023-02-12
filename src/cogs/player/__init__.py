@@ -1,7 +1,6 @@
 from .guild_session import GuildSession
 from .utils import _time_split, run_blocker, YT_DLP_SESH, NO_LOOP, LOOP
 from .job import Job
-from .request_queue import RequestQueue
 from .queue_menu import QueueMenu
 
 from discord.ext import commands, tasks
@@ -9,7 +8,7 @@ from collections import defaultdict
 import discord
 import asyncio
 from copy import deepcopy
-from typing import Union, List, Dict
+from typing import List, Dict
 import logging
 import os
 import re
@@ -56,6 +55,12 @@ class Player(commands.Cog):
                                # though, this should only matter to streaming music, right?
 
     def __init__(self, bot: discord.ext.commands.Bot):
+        """
+        Initialize the bot.
+
+        Args:
+            bot (discord.ext.commands.Bot): The Discord Bot client.
+        """
         self._bot = bot
         self._players: Dict[int, discord.FFmpegPCMAudio] = {}
         self._vault = Vault()
@@ -65,7 +70,17 @@ class Player(commands.Cog):
         # Stores information on which guild the bot is staying inside VC 
         self._active_guild_session_cache: Dict[int, GuildSession] = {}                                          
 
-    def get_players(self, ctx, job=_NEW_PLAYER):
+    def get_players(self, ctx: commands.Context, job: int =_NEW_PLAYER):
+        """
+        Gets the audio player for a voice channel in a guild.
+
+        Args:
+            ctx (commands.Context): _description_
+            job (int, optional): _description_. Defaults to _NEW_PLAYER.
+
+        Returns:
+            discord.AudioSource: an audio source for the bot to play in the voice channel.
+        """
         guild_id = ctx.guild.id
         guild_sesh = self._guild_sessions[guild_id]
         if guild_id in self._players and job:
@@ -103,10 +118,6 @@ class Player(commands.Cog):
             # if VC left by the user is not equal to the VC that bot is in? then return
             if voice.channel.id != before.channel.id:
                 return
-
-            if not after.channel and member.bot and member.id == self._bot.user.id:
-                # apparently this is not triggered somehow.
-                self._cleanup(member)
 
             if len(voice.channel.members) <= 1:
                 guild_.timeout_timer = 0
@@ -147,25 +158,6 @@ class Player(commands.Cog):
                     'options': '-vn'
         }
         print(f"cleanup applied on guild {guild_id}")
-
-
-    # @commands.Cog.listener()
-    # async def on_voice_state_update(self, member: discord.Member, before, after):
-    #     # add cases where ALL users left the VC and the bot is left idle for some time.
-
-    #     if member.bot and member.id == self._bot.user.id:
-    #         if before.channel and not after.channel:
-    #             guild_id = member.guild.id
-    #             self._guild_sessions[guild_id].reset()
-    #             try:
-    #                 del self._players[guild_id]
-    #             except KeyError:
-    #                 pass
-                
-    #             self._FFMPEG_STREAM_PARTIAL_OPTIONS = {
-    #                 'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss {start_time} -t {fast_forward}',
-    #                 'options': '-vn'
-    #             }
 
     async def process_query(self, ctx: commands.Context, query, process_chapter = False):
         can_join_vc = self.peek_vc(ctx)
@@ -240,6 +232,7 @@ class Player(commands.Cog):
                 try:
                     song_copy = deepcopy(song)
                     guild_.selected_chapter[song_copy] = index_chapter
+
                     # In VERY RARE cases, ss_title and ss_end are flipped.
                     # For instance, the metadata of this [video](https://youtu.be/nB1cpZWWQ5E) has the very first "chapter" having flipped ss_title and ss_end (the 0:00:00 to 0:00:01 one) 
                     # I'm not entirely sure why this is flipped, but all I know that it breaks the program
@@ -264,26 +257,18 @@ class Player(commands.Cog):
                     guild_.cached_options.update({data[0]: self._FFMPEG_STREAM_PARTIAL_OPTIONS})
                 except IndexError:
                     return await ctx.send("The chapter index is higher than the amount the video has. Please check your input")
-            await self.time_check(ctx, data, guild_)
 
-            msg = self.get_msg(data)
-
-            guild_.queue.extend(data)
-            
-            await ctx.send(msg)
-            
-            try:
-                voiceChannel = discord.utils.get(
-                    ctx.message.guild.voice_channels,
-                    name=ctx.author.guild.get_member(ctx.author.id).voice.channel.name
-                    )
-            except AttributeError:
-                return await ctx.send('You need to be in a voice channel to use this command')
-
-            await self.pre_play_process(ctx, voiceChannel)
+            await self.pre_play_process(ctx, data)
 
     @commands.hybrid_command()
     async def playnextchapter(self, ctx: commands.Context):
+        """
+        Plays the next chapter in a video that has chapters.
+        Requires the users to have used playchapter command prior to this command.
+
+        Args:
+            ctx (commands.Context): The context of the command
+        """
         guild_id = ctx.guild.id
         guild_ : GuildSession = self._guild_sessions[guild_id]
       
@@ -323,9 +308,60 @@ class Player(commands.Cog):
             guild_.song_title_suffix.clear()
             return await ctx.send("There are no more chapters after this chapter.")
 
-        await self.time_check(ctx, data, guild_)
+        await self.pre_play_process(ctx, data)
 
-        msg = self.get_msg(data)
+    @commands.hybrid_command()
+    async def play(self, ctx: commands.Context, *, query: str = None):
+        """
+        Plays audio in the voice channel.
+        Subsequent calls from users in the same channel will add more media entries to the queue.
+        :param ctx: The context of the command.
+        :param query: The url, or query to search for the desired video.
+        :return:
+        """
+        guild_id = ctx.guild.id
+
+        await self.process_query(ctx, query)
+
+        while self._vault.isEmpty(guild_id):
+            await asyncio.sleep(1)
+
+        # both runs at the same time from here.
+        data = self._vault.get_data(guild_id)
+        if not data:
+            await self.pre_play_process(ctx, data)
+        else:
+            await ctx.send("No audio has been loaded.")
+
+    async def pre_play_process(self, ctx, data):
+        """
+        Processes the data before playing the songs in the voice channel.
+
+        Args:
+            ctx (commands.Context): Context of the command
+            data (List[MediaMetadata]): The data to be processed
+
+        """
+        guild_ = self._guild_sessions[ctx.guild.id]
+        
+        queue_total_play_time = sum([int(i.duration) for i in guild_.queue]) if guild_.queue else 0
+        for item_ind, item in enumerate(data):
+            if item.duration >= self._MAX_AUDIO_ALLOWED_TIME: # for now, for safety, that is removed
+                await ctx.send(f"Video {item.title} is too long! Current max length allowed to be played for individual video is 6 hours! Removed from queue.")
+                data.remove(item)
+            elif queue_total_play_time + item.duration >= self._MAX_AUDIO_ALLOWED_TIME:
+                guild_.requires_download.extend(data[item_ind:])
+                break
+            else:
+                queue_total_play_time += item.duration
+
+        data_l = len(data)
+        if data_l == 1:
+            msg = f"Added {data[0].title} to the queue."
+        elif not data_l:
+            msg = "No songs are added."
+        else:
+            msg = f"Added {data_l} songs to the queue."
 
         guild_.queue.extend(data)
         await ctx.send(msg)
@@ -338,96 +374,6 @@ class Player(commands.Cog):
         except AttributeError:
             return await ctx.send('You need to be in a voice channel to use this command')
 
-        await self.pre_play_process(ctx, voiceChannel)
-
-    @commands.hybrid_command()
-    async def play(self, ctx: commands.Context, *, query: str = None):
-        """
-        Plays audio in the voice channel.
-        Subsequent calls from users in the same channel will add more media entries to the queue.
-        :param ctx: The context of the command.
-        :param query: The url, or query to search for the desired video.
-        :return:
-        """
-        guild_id = ctx.guild.id
-        guild_ = self._guild_sessions[guild_id]
-
-        await self.process_query(ctx, query)
-
-        while self._vault.isEmpty(guild_id):
-            await asyncio.sleep(1)
-
-        # both runs at the same time from here.
-        data = self._vault.get_data(guild_id)
-        if data is not None:
-
-            # checking for entries that requires downloading
-            # These entries are some but not limited to:
-            #  - Entries that are more than 6 hours in play time.
-            #  - Entries that make the playlist plays longer than 6 hours 
-            # All of this is mainly to preserve the items in the playlist.
-
-            await self.time_check(ctx, data, guild_)
-
-            msg = self.get_msg(data)
-            
-            guild_.queue.extend(data)
-            if ctx.interaction:
-                await ctx.interaction.followup.send(msg)
-            else:
-                await ctx.send(msg)
-            
-            try:
-                voiceChannel = discord.utils.get(
-                    ctx.message.guild.voice_channels,
-                    name=ctx.author.guild.get_member(ctx.author.id).voice.channel.name
-                    )
-            except AttributeError:
-                return await ctx.send('You need to be in a voice channel to use this command')
-
-            await self.pre_play_process(ctx, voiceChannel)
-
-    # def refresh_stream_link(self, ctx: commands.Context, song: MediaMetadata):
-    #     guild_ = self._guild_sessions[ctx.guild.id]
-    #     song_url = song.original_url
-    #     new_job = Job(self._ACCESS_JOB, song_url)
-    #     guild_.request_queue.add_new_request(new_job)
-    #     if not guild_.cur_processing:
-    #         self._bot.loop.create_task(self.bg_process_rq(ctx))
-    
-    def get_msg(self, data):
-        data_l = len(data)
-        if data_l == 1:
-            return f"Added {data[0].title} to the queue."
-        elif not data_l:
-            return "No songs are added."
-        else:
-            return f"Added {data_l} songs to the queue."
-
-    async def time_check(self, ctx, data, guild_):
-        queue_total_play_time = sum([int(i.duration) for i in guild_.queue]) if guild_.queue else 0
-        for item_ind, item in enumerate(data):
-            if item.duration >= self._MAX_AUDIO_ALLOWED_TIME: # for now, for safety, that is removed
-                await ctx.send(f"Video {item.title} is too long! Current max length allowed to be played for individual video is 6 hours! Removed from queue.")
-                data.remove(item)
-            elif queue_total_play_time + item.duration >= self._MAX_AUDIO_ALLOWED_TIME:
-                guild_.requires_download.extend(data[item_ind:])
-                break
-            else:
-                queue_total_play_time += item.duration
-
-    async def pre_play_process(self, ctx, voiceChannel):
-        """
-        Processes the data before playing the songs in the voice channel.
-
-        Args:
-            ctx (commands.Context): Context of the command
-            data (List[MediaMetadata]): The data to be processed
-            voiceChannel (_type_): The voice channel to connect to
-
-        """
-        guild_ = self._guild_sessions[ctx.guild.id]
-        
         try:
             if guild_.requires_download:
                 self.bg_download_check.start(ctx)
@@ -456,6 +402,12 @@ class Player(commands.Cog):
 
     @tasks.loop(seconds = 20)
     async def bg_download_check(self, ctx):
+        """
+        Processes the audio clips that requires downloading in the background.
+
+        Args:
+            ctx (_type_): _description_
+        """
         guild_ = self._guild_sessions[ctx.guild.id]
 
         for item in guild_.requires_download:
@@ -471,6 +423,14 @@ class Player(commands.Cog):
             await self.disconnect(voice)
 
     async def play_song(self, ctx: commands.Context, voice, refresh = False):
+        """
+        Plays the first song in the queue.
+
+        Args:
+            ctx (commands.Context): The context of the command.
+            voice (discord.VoiceClient): The voice client that the bot is connected to.
+            refresh (bool, optional): Whether the bot is refreshing the player or not. Defaults to False.
+        """
         guild_ = self._guild_sessions[ctx.guild.id]
 
         if not voice.is_playing():
@@ -494,6 +454,14 @@ class Player(commands.Cog):
             await asyncio.sleep(1)
     
     def retry_play(self, ctx, voice, e):
+        """
+        Retries loading the player
+
+        Args:
+            ctx (commands.Context): The context of the command.
+            voice (discord.VoiceClient): The voice client that the bot is connected to.
+            e (Exception): The error that triggered when the bot failed to load the player.
+        """
         guild_ = self._guild_sessions[ctx.guild.id]
         if guild_.retry_count < self._MAX_RETRY_COUNT:
             guild_.retry_count += 1
@@ -504,6 +472,9 @@ class Player(commands.Cog):
             print("Player error: %s", e)
 
     def play_next(self, ctx: commands.Context):
+        """
+        Supporting function to play the next item in queue
+        """
         guild_ = self._guild_sessions[ctx.guild.id]
 
         vc = discord.utils.get(self._bot.voice_clients, guild=ctx.guild)
@@ -557,10 +528,8 @@ class Player(commands.Cog):
     @commands.command()
     @commands.is_owner()
     async def debug(self, ctx):
-        """Debugs a section of the code. Only the owner can use this.
-
-        Args:
-            ctx (commands.Context()): context of the message
+        """
+        Debugs a section of the code. Only the owner can use this.
         """
         guild_id = ctx.guild.id
         guild_ = self._guild_sessions[guild_id]
@@ -575,6 +544,9 @@ class Player(commands.Cog):
 
     @commands.hybrid_command(name='stop')
     async def stop_(self, ctx: commands.Context):
+        """
+        Stops the player.
+        """
         guild_id = ctx.guild.id
         guild_ = self._guild_sessions[guild_id]
         can_join_vc = self.peek_vc(ctx)
@@ -632,6 +604,9 @@ class Player(commands.Cog):
 
     @commands.hybrid_command(name="pause")
     async def pause(self, ctx):
+        """
+        Pauses the player
+        """
         can_join_vc = self.peek_vc(ctx)
         if not can_join_vc:
             return await ctx.send("You need to be in a voice channel to use this command.")
@@ -644,6 +619,9 @@ class Player(commands.Cog):
 
     @commands.hybrid_command(name='resume')
     async def resume(self, ctx):
+        """
+        Resumes the player
+        """
         can_join_vc = self.peek_vc(ctx)
         if not can_join_vc:
             return await ctx.send("You need to be in a voice channel to use this command.")
@@ -656,6 +634,9 @@ class Player(commands.Cog):
 
     @commands.hybrid_command(name="queue", aliases=["q", "playlist"])
     async def queue_(self, ctx: commands.Context):
+        """
+        Shows the current queue that is being played in the voice channel.
+        """
         can_join_vc = self.peek_vc(ctx)
         if not can_join_vc:
             return await ctx.send("You need to be in a voice channel to use this command.")
@@ -715,6 +696,9 @@ class Player(commands.Cog):
 
     @commands.hybrid_command(name='clear')
     async def clear_(self, ctx):
+        """
+        Clears the queue
+        """
         guild_id = ctx.guild.id
         guild_ = self._guild_sessions[guild_id]
         can_join_vc = self.peek_vc(ctx)
@@ -726,6 +710,9 @@ class Player(commands.Cog):
 
     @commands.hybrid_command(name='loop')
     async def loop(self, ctx, loop_amount = None):
+        """
+        Loops the current song. Users can specify the number of times the song can be looped.
+        """
         can_join_vc = self.peek_vc(ctx)
         if not can_join_vc:
             return await ctx.send("You need to be in a voice channel to use this command.")
@@ -755,6 +742,9 @@ class Player(commands.Cog):
 
     @commands.hybrid_command(name='shuffle')
     async def shuffle(self, ctx):
+        """
+        Shuffles the playlist
+        """
         can_join_vc = self.peek_vc(ctx)
         if not can_join_vc:
             return await ctx.send("You need to be in a voice channel to use this command.")
@@ -801,6 +791,9 @@ class Player(commands.Cog):
             await ctx.send(msg)
 
     def _is_connected(self, ctx):
+        """
+        Checks whether the bot is connected to the voice client or not.
+        """
         return discord.utils.get(self._bot.voice_clients, guild=ctx.guild)
 
 
