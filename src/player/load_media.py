@@ -8,9 +8,13 @@ from src.player.media_metadata import MediaMetadata
 from typing import Union
 from discord import Attachment
 from constants import MAX_NUMBER_OF_FILES
+import re
 
 
 class LoadMedia(DownloaderObservable):
+
+    YOUTUBE_WATCH_URL = 'https://youtube.com/watch?v={}'
+
     def __init__(self, url, url_type: str, **kwargs):
         super().__init__()
         self._url = url
@@ -27,8 +31,13 @@ class LoadMedia(DownloaderObservable):
     def _load_youtube(self):
         if "list" in self._url:
             url_type = "playlist"
+        elif re.search(r'.*\/live\/([a-zA-Z0-9]*)(\?.*)*', self._url):
+            id_ = re.search(r'.*\/live\/([a-zA-Z0-9]*)(\?.*)*', self._url).group(1)
+            self._url = self.YOUTUBE_WATCH_URL.format(id_)
+            url_type = "video"
         else:
             url_type = "video"
+        
         inst = YoutubeDL(
             {
                 'format':'bestaudio/best',
