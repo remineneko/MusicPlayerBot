@@ -3,7 +3,7 @@
 
  # Requirements
  
-- Python 3.6+.
+- Python 3.9+.
 - Other requirements can be found [here](requirements.txt)
 
  # How to use the bot
