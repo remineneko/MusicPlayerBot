@@ -9,3 +9,4 @@ MUSIC_STORAGE = os.path.join(ROOT_FOLDER, "music_storage")
 
 MAX_MSG_EMBED_SIZE = 1024
 CONFIG_FILE_LOC = "config.ini"
+MAX_NUMBER_OF_FILES = 100

@@ -7,6 +7,7 @@ from typing import Dict
 from src.player.media_metadata import MediaMetadata
 from typing import Union
 from discord import Attachment
+from constants import MAX_NUMBER_OF_FILES
 
 
 class LoadMedia(DownloaderObservable):
@@ -30,8 +31,9 @@ class LoadMedia(DownloaderObservable):
             url_type = "video"
         inst = YoutubeDL(
             {
-                'format':'bestaudio',
-                'ignoreerrors':'only_download'
+                'format':'bestaudio/best',
+                'ignoreerrors':'only_download',
+                'playlist_items': f'1-{MAX_NUMBER_OF_FILES}'
             }
         )
 

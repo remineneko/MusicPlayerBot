@@ -328,7 +328,7 @@ class Player(commands.Cog):
 
         # both runs at the same time from here.
         data = self._vault.get_data(guild_id)
-        if not data:
+        if data:
             await self.pre_play_process(ctx, data)
         else:
             await ctx.send("No audio has been loaded.")
@@ -346,14 +346,17 @@ class Player(commands.Cog):
         
         queue_total_play_time = sum([int(i.duration) for i in guild_.queue]) if guild_.queue else 0
         for item_ind, item in enumerate(data):
-            if item.duration >= self._MAX_AUDIO_ALLOWED_TIME: # for now, for safety, that is removed
-                await ctx.send(f"Video {item.title} is too long! Current max length allowed to be played for individual video is 6 hours! Removed from queue.")
-                data.remove(item)
-            elif queue_total_play_time + item.duration >= self._MAX_AUDIO_ALLOWED_TIME:
-                guild_.requires_download.extend(data[item_ind:])
-                break
-            else:
-                queue_total_play_time += item.duration
+            try:
+                if item.duration >= self._MAX_AUDIO_ALLOWED_TIME: # for now, for safety, that is removed
+                    await ctx.send(f"Video {item.title} is too long! Current max length allowed to be played for individual video is 6 hours! Removed from queue.")
+                    data.remove(item)
+                elif queue_total_play_time + item.duration >= self._MAX_AUDIO_ALLOWED_TIME:
+                    guild_.requires_download.extend(data[item_ind:])
+                    break
+                else:
+                    queue_total_play_time += item.duration
+            except TypeError: # occurs when this is a stream
+                item.title = self.filter_name(item.title)
 
         data_l = len(data)
         if data_l == 1:
@@ -385,6 +388,11 @@ class Player(commands.Cog):
 
         voice = ctx.voice_client
         await self.play_song(ctx, voice)
+
+    def filter_name(self, title):
+        expr = re.compile(' \d{4}-\d{2}-\d{2} \d{2}:\d{2}')
+        if expr.search(title):
+            return re.sub(expr, "", title)
 
     async def bg_process_rq(self, ctx):
         """ Processes the requests in the background
