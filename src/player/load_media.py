@@ -11,6 +11,10 @@ from constants import MAX_NUMBER_OF_FILES
 import re
 
 
+class UnsupportedPlatformError(Exception):
+    pass
+
+
 class LoadMedia(DownloaderObservable):
 
     YOUTUBE_WATCH_URL = 'https://youtube.com/watch?v={}'
@@ -23,21 +27,20 @@ class LoadMedia(DownloaderObservable):
 
     def load_info(self):
         print(f"Loading info for {self._url}")
-        if self._base_url_type == LI.YOUTUBE:
-            return self._load_youtube()
+
+        if self._base_url_type in [LI.YOUTUBE, LI.BILIBILI]:
+            return self._load_supported()
         elif self._base_url_type == LI.NORMAL_URL:
             return self._load_file()
+        elif self._base_url_type == LI.SPOTIFY:
+            raise UnsupportedPlatformError("Spotify is not supported by the bot.")
 
-    def _load_youtube(self):
+    def _load_supported(self):
         if "list" in self._url:
             url_type = "playlist"
-        elif re.search(r'.*\/live\/([a-zA-Z0-9]*)(\?.*)*', self._url):
-            id_ = re.search(r'.*\/live\/([a-zA-Z0-9]*)(\?.*)*', self._url).group(1)
-            self._url = self.YOUTUBE_WATCH_URL.format(id_)
-            url_type = "video"
         else:
             url_type = "video"
-        
+
         inst = YoutubeDL(
             {
                 'format':'bestaudio/best',
@@ -71,9 +74,13 @@ class LoadMedia(DownloaderObservable):
         if isinstance(self._url, str):
             request = Request(self._url, headers= {'User-Agent':"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"})
             response = urlopen(request)
-            filename = basename(response.url)
-            file_name, file_ext = filename.split('.')
-            to_return = [MediaMetadata.from_title_extension(file_name, file_ext, self._url)]
+            filename = response.headers.get_filename()
+            if filename:
+                file_name, file_ext = filename.split('.')
+                to_return = [MediaMetadata.from_title_extension(file_name, file_ext, self._url)]
+            else:
+                # if somehow the link provided is not a legitimate download file link, just delegate that to yt-dlp to handle it instead
+                return self._load_supported()
         else:
             extension = self._url.filename.split(".")[-1]
             to_return = [MediaMetadata.from_title_extension(self._url.filename.replace(f".{extension}", ""), extension, self._url.url)]

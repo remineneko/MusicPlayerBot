@@ -8,7 +8,7 @@ from src.player.media_metadata import MediaMetadata
 from src.player.youtube.download_media import isExist, SingleDownloader
 from src.player.observers import *
 from src.data_transfer import *
-from src.player.load_media import LoadMedia
+from src.player.load_media import LoadMedia, UnsupportedPlatformError
 from src.cogs.player.utils import run_blocker, _time_split
 
 
@@ -106,7 +106,10 @@ class AccessAction(BaseAction):
         try:
             data = await run_blocker(self._client, load_sesh.load_info)
         except ValueError:
-            await self._ctx.send("Cannot load playlist on play chapter requests.")
+            await self._ctx.send("Illegal input.")
+            return None
+        except UnsupportedPlatformError:
+            await self._ctx.send("The specified platform is not supported by the bot.")
             return None
         load_sesh.unsubscribe(self._observer)
 
