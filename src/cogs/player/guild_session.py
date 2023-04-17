@@ -13,20 +13,22 @@ class GuildSession:
         self.request_queue: RequestQueue = RequestQueue()                   # represents the object that handles the loading of media
         self.loop: int = NO_LOOP                                            # represents whether the audio is looped or not in a guild
         
-        self.loop_count: Union[Dict[MediaMetadata, int], None] = None       # represents how many times an audio is looped. This applies to the loop with number argument
-        self.loop_counter: int = 0                                          # represents how many times an audio has been looped. Again, this applies to the loop command with the number argument
+        self.loop_count: Union[Dict[MediaMetadata, int], None] = None       # represents how many times an audio is looped. 
+                                                                            # This applies to the loop with number argument
+        self.loop_counter: int = 0                                          # represents how many times an audio has been looped. 
+                                                                            # Again, this applies to the loop command with the number argument
 
-        self.selected_chapter: Dict[MediaMetadata, int] = {}                # represents the current chapter
-        self.song_title_suffix: Dict[MediaMetadata, str] = {}
+        self.selected_chapter: Dict[MediaMetadata, int] = {}                # represents the selected chapter for the playchapter command
+        self.song_title_suffix: Dict[MediaMetadata, str] = {}               # represents the suffix that the title has when playchapter is evoked
 
-        self.cur_song: Union[MediaMetadata, None] = None
-        self.previous_song: Union[MediaMetadata, None] = None
-        self.cur_processing: bool = False
-        self.retry_count: int = 0
-        self.cached_options: Dict[MediaMetadata, Dict[str, str]] = {}
-        self.requires_download: List[MediaMetadata] = list()
+        self.cur_song: Union[MediaMetadata, None] = None                    # represents the current song that is being played in the voice channel
+        self.previous_song: Union[MediaMetadata, None] = None               # represents the previous song that played in the voice channel
+        self.cur_processing: bool = False                                   # represents whether the queue is being processed or not
+        self.retry_count: int = 0                                           # represents the number of retries for a song when a song fails to load
+        self.cached_options: Dict[MediaMetadata, Dict[str, str]] = {}       # represents the FFMPEG options stored to play the video, chapter-wise
+        self.requires_download: List[MediaMetadata] = list()                # represents the list of songs that requires downloading prior to playing
 
-        self.timeout_timer = 0
+        self.timeout_timer = 0                                              # represents the current timer for the bot when there is no one else in the voice channel
 
 
     @staticmethod

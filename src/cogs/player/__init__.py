@@ -2,6 +2,7 @@ from .guild_session import GuildSession
 from .utils import _time_split, run_blocker, YT_DLP_SESH, NO_LOOP, LOOP
 from .job import Job
 from .queue_menu import QueueMenu
+from .timestamp_parser import parse_timestamp, UnableToParseError, parse_to_timestamp
 
 from discord.ext import commands, tasks
 from collections import defaultdict
@@ -47,8 +48,6 @@ class Player(commands.Cog):
     _MAX_RETRY_COUNT = 3
 
     _MAX_AUDIO_ALLOWED_TIME = 21600
-
-    
     
     # URL_REFRESH_TIME = 21600 # issue found at https://gist.github.com/vbe0201/ade9b80f2d3b64643d854938d40a0a2d?permalink_comment_id=4140046#gistcomment-4140046
                                # basically, if the playlist is set to be played for 6 hrs, the latter links will expire.
@@ -275,7 +274,7 @@ class Player(commands.Cog):
         if not guild_.selected_chapter:
             return await ctx.send(f"You have no songs that was initialized by {BOT_PREFIX}playchapter command, or your previous call to this command asked for a chapter beyond what the video has.")
         
-        cur_song = guild_.cur_song
+        cur_song = guild_.cur_song    
         data = [deepcopy(cur_song)]
         song = data[0]
 
@@ -284,7 +283,7 @@ class Player(commands.Cog):
         
         try:
             song.title = song.title.removesuffix(guild_.song_title_suffix[cur_song])
-            song_copy = deepcopy(song) # so that the data wont be mutated.
+            song_copy = deepcopy(song) # so that other data wont be mutated.
             next_index = guild_.selected_chapter[song_copy] + 1
             guild_.selected_chapter[song_copy] = next_index
             ss_start, ss_title, ss_end = list(song.chapters[next_index].values())
@@ -311,6 +310,61 @@ class Player(commands.Cog):
         await self.pre_play_process(ctx, data)
 
     @commands.hybrid_command()
+    async def playfromchapter(self, ctx: commands.Context, chapter_index: str, *, query):
+        """ Plays a video from a chapter.
+
+        Args:
+            ctx (commands.Context): _description_
+            chapter_index (str): _description_
+            query (str): _description_
+
+        """
+        try:
+            index_chapter = int(chapter_index) - 1
+        except ValueError:
+            return await ctx.send("The chapter index must be a number")
+        
+        await self.process_query(ctx, query, True)
+        guild_id = ctx.guild.id
+        guild_ = self._guild_sessions[guild_id]
+
+        while self._vault.isEmpty(guild_id):
+            await asyncio.sleep(1)
+
+        # both runs at the same time from here.
+        data: List[MediaMetadata] = self._vault.get_data(guild_id)
+        if len(data) > 1:
+            return await ctx.send("playfromchapter only supports a single video.")
+        elif data:
+            song: MediaMetadata = data[0]
+            if not song.chapters:
+                return await ctx.send("The song chosen does not have any chapters.")
+            else:
+                try:
+                    song_copy = deepcopy(song)
+                    guild_.selected_chapter[song_copy] = index_chapter
+
+                    self.sanitize_(song.chapters)
+
+                    ss_start, ss_title, ss_end = list(song.chapters[index_chapter].values())
+                    
+                    ss_start = int(ss_start)
+                    ss_end = int(ss_end)
+                    
+                    self._FFMPEG_STREAM_PARTIAL_OPTIONS = {
+                            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss {start_time} -t {fast_forward}',
+                            'options': '-vn'
+                        } 
+                    self._FFMPEG_STREAM_PARTIAL_OPTIONS['before_options'] = self._FFMPEG_STREAM_PARTIAL_OPTIONS['before_options'].format(start_time= ss_start, fast_forward= song.duration - ss_start)
+                    
+                    # caching options to allow the bot to play
+                    guild_.cached_options.update({data[0]: self._FFMPEG_STREAM_PARTIAL_OPTIONS})
+                except IndexError:
+                    return await ctx.send("The chapter index is higher than the amount the video has. Please check your input")
+
+            await self.pre_play_process(ctx, data)
+
+    @commands.hybrid_command()
     async def play(self, ctx: commands.Context, *, query: str = None):
         """
         Plays audio in the voice channel.
@@ -333,7 +387,64 @@ class Player(commands.Cog):
         else:
             await ctx.send("No audio has been loaded.")
 
-    async def pre_play_process(self, ctx, data):
+    @commands.hybrid_command()
+    async def seek(self, ctx: commands.Context, timestamp: str):
+        """
+        Seeks to a certain point in the video.
+        The user can either put in the timestamp in seconds (360 to represent 6 minute mark for example), 
+            or ":" format - "6:30" to represent the timestamp to be 6 minutes and 30 seconds.
+        
+        For the ":" format, one can specify the hour and day using similar notations - "1:00:00" for 1 hour, 
+            and "1:00:00:00" for 1 day.
+        Args:
+            ctx (commands.Context): The context of the command.
+            timestamp (str): The timestamp of the video to seek to. 
+
+        """
+        guild_id = ctx.guild.id
+
+        guild_ = self._guild_sessions[guild_id]
+
+        if not guild_.cur_song:
+            return await ctx.send("A song must be playing to use the seek command.")
+        
+        # parse the timestamp here
+        # there are two timestamps format available - the number format and the semi-colon format
+        try:
+            start = parse_timestamp(timestamp)
+        except UnableToParseError as e:
+            return await ctx.send(e)
+        
+        # and then reparse for that printing.
+        to_send = parse_to_timestamp(start)
+
+        song = guild_.cur_song
+
+        if start > song.duration:
+            return await ctx.send("The seek point is further than the duration of the video.")
+        
+        if song in guild_.song_title_suffix:
+            original_song = song
+            song = deepcopy(song)
+            song.title = song.title.removesuffix(guild_.song_title_suffix[original_song])
+
+            # with seek being used, the previously song in chapter must be removed. 
+            # after all, the current song is no longer provoked by playchapter right?
+
+            del guild_.song_title_suffix[original_song]
+
+        self._FFMPEG_STREAM_PARTIAL_OPTIONS = {
+                            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss {start_time} -t {fast_forward}',
+                            'options': '-vn'
+                        } 
+        self._FFMPEG_STREAM_PARTIAL_OPTIONS['before_options'] = self._FFMPEG_STREAM_PARTIAL_OPTIONS['before_options'].format(start_time= start, fast_forward= song.duration - start)
+
+        # to play this later on
+        guild_.cached_options.update({song: self._FFMPEG_STREAM_PARTIAL_OPTIONS})
+        await ctx.send(f"Playing from {to_send}")
+        await self.pre_play_process(ctx, [song], play_immediately=True)
+
+    async def pre_play_process(self, ctx, data, play_immediately=False):
         """
         Processes the data before playing the songs in the voice channel.
 
@@ -367,13 +478,14 @@ class Player(commands.Cog):
             msg = f"Added {data_l} songs to the queue."
 
         guild_.queue.extend(data)
-        await ctx.send(msg)
-            
+        if not play_immediately:
+            await ctx.send(msg)
+                
         try:
             voiceChannel = discord.utils.get(
                 ctx.message.guild.voice_channels,
                 name=ctx.author.guild.get_member(ctx.author.id).voice.channel.name
-                    )
+                        )
         except AttributeError:
             return await ctx.send('You need to be in a voice channel to use this command')
 
@@ -382,12 +494,13 @@ class Player(commands.Cog):
                 self.bg_download_check.start(ctx)
         except RuntimeError:
             pass
-
+        
         if not self._is_connected(ctx) and guild_.queue:
             await voiceChannel.connect()
 
         voice = ctx.voice_client
-        await self.play_song(ctx, voice)
+        await self.play_song(ctx, voice, overwrite_player=play_immediately)
+        
 
     def filter_name(self, title):
         expr = re.compile(' \d{4}-\d{2}-\d{2} \d{2}:\d{2}')
@@ -430,7 +543,9 @@ class Player(commands.Cog):
             await asyncio.sleep(1)
             await self.disconnect(voice)
 
-    async def play_song(self, ctx: commands.Context, voice, refresh = False):
+    async def play_song(self, ctx: commands.Context, 
+                        voice,refresh = False,
+                        overwrite_player = False):
         """
         Plays the first song in the queue.
 
@@ -456,8 +571,10 @@ class Player(commands.Cog):
                 after=lambda e:
                 self.retry_play(ctx, voice, e) if e else self.play_next(ctx)
                     )
-
-            await ctx.send('**Now playing:** {}'.format(guild_.cur_song.title), delete_after=20)
+            if not overwrite_player:
+                await ctx.send('**Now playing:** {}'.format(guild_.cur_song.title), delete_after=20)
+        elif overwrite_player:
+            await self.skip_(ctx, verbose=False)
         else:
             await asyncio.sleep(1)
     
@@ -568,7 +685,7 @@ class Player(commands.Cog):
             await ctx.send("I am not in any voice chat right now")
 
     @commands.hybrid_command(name="skip")
-    async def skip_(self, ctx):
+    async def skip_(self, ctx, verbose=True):
         """
         Skips to next song in queue
         """
@@ -579,7 +696,8 @@ class Player(commands.Cog):
         if self._is_connected(ctx):
             ctx.voice_client.pause()
             try:
-                await ctx.send("Skipping current song...")
+                if verbose:
+                    await ctx.send("Skipping current song...")
                 ctx.voice_client.stop()
             except IOError:
                 ctx.voice_client.resume()

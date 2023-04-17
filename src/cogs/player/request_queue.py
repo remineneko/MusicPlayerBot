@@ -9,6 +9,11 @@ from src.data_transfer import *
 
 class RequestQueue(DownloaderObservers):
     def __init__(self, observer = DownloaderObservable()):
+        """ Initialize a new request queue for the player
+
+        Args:
+            observer (DownloaderObservable, optional): An observable object for the request queue.
+        """
         super().__init__(observer)
         self.priority: Union[Job, None] = None
         self.on_hold: List[Job] = []
@@ -37,9 +42,6 @@ class RequestQueue(DownloaderObservers):
 
             - If the download process is completed for one list, continue with the next one.
         """
-        def check_valid_input(m):
-            return m.author == ctx.author and m.channel == ctx.channel
-
         if self.priority is not None and self._ongoing_process:
             while not self._completed_priority:
                 await asyncio.sleep(1)
