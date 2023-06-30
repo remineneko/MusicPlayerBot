@@ -11,6 +11,7 @@ def parse_timestamp(timestamp: str):
     except ValueError:
         return parse_colon_timestamp(timestamp)
 
+
 def parse_colon_timestamp(timestamp: str):
     if ":" not in timestamp:
         raise UnableToParseError("Unsupported time format.")
