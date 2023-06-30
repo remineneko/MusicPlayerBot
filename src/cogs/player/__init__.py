@@ -169,7 +169,10 @@ class Player(commands.Cog):
         if ctx.interaction:
             await ctx.interaction.response.defer()
 
-        query = query.strip()
+        try:
+            query = query.strip()
+        except AttributeError:
+            query = None
 
         if query:
             query_type = LinkIdentifier(query).url_type
@@ -500,7 +503,7 @@ class Player(commands.Cog):
 
         voice = ctx.voice_client
         await self.play_song(ctx, voice, overwrite_player=play_immediately)
-        
+    
 
     def filter_name(self, title):
         expr = re.compile(' \d{4}-\d{2}-\d{2} \d{2}:\d{2}')
@@ -607,7 +610,7 @@ class Player(commands.Cog):
         if guild_.loop:
             if guild_.loop_count is not None:
                 if guild_.loop_counter < list(guild_.loop_count.values())[0]:
-                    guild_.loop_count += 1
+                    guild_.loop_counter += 1
                 else:
                     guild_.loop = NO_LOOP
                     self.play_next(ctx)
