@@ -4,3 +4,4 @@ PyNaCl
 wheel
 ffmpeg
 pip
+python-dotenv

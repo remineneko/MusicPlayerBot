@@ -1,7 +1,9 @@
-from .bot_config import BotConfig
+import dotenv
 import os
 
-BOT_API_TOKEN = BotConfig().api_token
+dotenv.load_dotenv()
+
+BOT_API_TOKEN = os.environ.get('BOT_API_TOKEN')
 BOT_PREFIX = ">3"
 
 ROOT_FOLDER = os.path.dirname(os.path.realpath(__file__))
