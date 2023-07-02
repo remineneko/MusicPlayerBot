@@ -1,15 +1,18 @@
-from src.player.observers import DownloaderObservable
-from yt_dlp import YoutubeDL
-from src.player.link_identifier import LinkIdentifier as LI
-from urllib.request import urlopen, Request
-from os.path import basename
-from typing import Dict
-from src.player.media_metadata import MediaMetadata
-from typing import Union
-from discord import Attachment
-from constants import MAX_NUMBER_OF_FILES
 import re
+from os.path import basename
+from typing import Dict, Union
+from urllib.request import Request, urlopen
 
+from discord import Attachment
+from typing import List
+from yt_dlp import YoutubeDL
+
+from constants import MAX_NUMBER_OF_FILES
+from src.player.link_identifier import LinkIdentifier as LI
+from src.player.media_metadata import MediaMetadata
+from src.player.observers import DownloaderObservable
+from src.player.searcher import SITE_CAMEL_MAPPING
+from src.player.loader import SITE_MAPPING, YouTubeLoader
 
 class UnsupportedPlatformError(Exception):
     pass
@@ -28,47 +31,16 @@ class LoadMedia(DownloaderObservable):
     def load_info(self):
         print(f"Loading info for {self._url}")
 
-        if self._base_url_type in [LI.YOUTUBE, LI.BILIBILI]:
+        if self._base_url_type in list(SITE_CAMEL_MAPPING.values()):
             return self._load_supported()
         elif self._base_url_type == LI.NORMAL_URL:
             return self._load_file()
-        elif self._base_url_type == LI.SPOTIFY:
-            raise UnsupportedPlatformError("Spotify is not supported by the bot.")
-
+       
     def _load_supported(self):
-        if "list" in self._url:
-            url_type = "playlist"
-        else:
-            url_type = "video"
-
-        inst = YoutubeDL(
-            {
-                'format':'bestaudio/best',
-                'ignoreerrors':'only_download',
-                'playlist_items': f'1-{MAX_NUMBER_OF_FILES}'
-            }
-        )
-
-        work_type = self._kwargs['work_type']
-
-        if url_type == 'video':
-            obtained_data : Dict = inst.extract_info(self._url, download = False)
-            self.notify_observers() # im done mtfk
-            if obtained_data is not None:
-                return [MediaMetadata(obtained_data)]
-            else:
-                return []
-        elif work_type == 'normal':
-            obtained_data : Dict = inst.extract_info(self._url, download = False)
-            self.notify_observers() # im done mtfk
-            try:
-                return [MediaMetadata(i) for i in obtained_data['entries'] if i is not None]
-            except KeyError: 
-                # Occurs when yt_dlp cannot determine that it is a playlist, and decides to load it as a video midway.
-                # This happened once somewhere...
-                return [MediaMetadata(obtained_data)]
-        else:
-            raise ValueError("Cannot load playlist for this work type.")
+        if self._base_url_type in SITE_MAPPING:
+            data: List[MediaMetadata] = SITE_MAPPING[self._base_url_type]().load(self._url)
+        self.notify_observers()
+        return data
 
     def _load_file(self):
         if isinstance(self._url, str):
@@ -80,8 +52,8 @@ class LoadMedia(DownloaderObservable):
                 to_return = [MediaMetadata.from_title_extension(file_name, file_ext, self._url)]
             else:
                 # if somehow the link provided is not a legitimate download file link, just delegate that to yt-dlp to handle it instead
-                return self._load_supported()
-        else:
+                to_return = YouTubeLoader().load(self._url)
+        elif isinstance(self._url, Attachment):
             extension = self._url.filename.split(".")[-1]
             to_return = [MediaMetadata.from_title_extension(self._url.filename.replace(f".{extension}", ""), extension, self._url.url)]
         self.notify_observers()
