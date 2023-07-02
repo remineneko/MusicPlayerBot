@@ -1,8 +1,8 @@
 from .guild_session import GuildSession
-from .utils import _time_split, run_blocker, YT_DLP_SESH, NO_LOOP, LOOP
+from .utils import _time_split, run_blocker, NO_LOOP, LOOP
 from .job import Job
 from .queue_menu import QueueMenu
-from .timestamp_parser import parse_timestamp, UnableToParseError, parse_to_timestamp
+from src.player.timestamp_parser import parse_timestamp, UnableToParseError, parse_to_timestamp
 
 from discord.ext import commands, tasks
 from collections import defaultdict
@@ -14,13 +14,14 @@ import logging
 import os
 import re
 import random
+from yt_dlp import YoutubeDL
 
 from src.data_transfer import Vault
 from constants import MUSIC_STORAGE, MAX_MSG_EMBED_SIZE, CONFIG_FILE_LOC, BOT_PREFIX
 from src.configs import Config
 from src.logger import BotHandler
 from src.player.media_metadata import MediaMetadata
-from src.player.youtube.download_media import isExist, SingleDownloader
+from src.player.youtube.download_media import isExist, SingleDownloader, toPath
 from src.player.link_identifier import LinkIdentifier
 
 
@@ -92,9 +93,10 @@ class Player(commands.Cog):
                     s_o = guild_sesh.cached_options[guild_sesh.cur_song]
                     player = discord.FFmpegOpusAudio(guild_sesh.cur_song.url, **s_o)
             else:
-                while not os.path.isfile(os.path.join(MUSIC_STORAGE, f"{guild_sesh.cur_song.id}.mp3")):
+                while not isExist(guild_sesh.cur_song):
                     asyncio.run_coroutine_threadsafe(asyncio.sleep(1), ctx.bot.loop)
-                player = discord.FFmpegPCMAudio(os.path.join(MUSIC_STORAGE, f"{guild_sesh.cur_song.id}.mp3"),
+                s_path = toPath(guild_sesh.cur_song)
+                player = discord.FFmpegPCMAudio(s_path,
                                             **self._FFMPEG_PLAY_OPTIONS)
             self._players[guild_id] = player
             return player
@@ -104,6 +106,8 @@ class Player(commands.Cog):
         if member.bot and member.id == self._bot.user.id:
             if before.channel and not after.channel:
                 self._cleanup(member)
+                if not any([guild.is_active for guild in self._guild_sessions.values()]):
+                    self._file_cleanup()
 
         if before.channel is not None:
             guild_ = self._guild_sessions[before.channel.guild.id]
@@ -142,6 +146,13 @@ class Player(commands.Cog):
                     if guild_.timeout_timer >= 300:
                         await self.disconnect(voice)
                         self._cleanup(member)
+                        if not any([guild.is_active for guild in self._guild_sessions.values()]):
+                            self._file_cleanup()
+        
+    def _file_cleanup(self):
+        for file in os.listdir(MUSIC_STORAGE):
+            os.remove(os.path.join(MUSIC_STORAGE, file))
+        print("Files are cleaned up.")
 
     def _cleanup(self, member: discord.Member):
         print("cleanup is triggered")
@@ -156,6 +167,7 @@ class Player(commands.Cog):
                     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss {start_time} -t {fast_forward}',
                     'options': '-vn'
         }
+
         print(f"cleanup applied on guild {guild_id}")
 
     async def process_query(self, ctx: commands.Context, query, process_chapter = False):
@@ -428,7 +440,7 @@ class Player(commands.Cog):
         
         if song in guild_.song_title_suffix:
             original_song = song
-            song = deepcopy(song)
+            song: MediaMetadata = deepcopy(song)
             song.title = song.title.removesuffix(guild_.song_title_suffix[original_song])
 
             # with seek being used, the previously song in chapter must be removed. 
@@ -467,6 +479,8 @@ class Player(commands.Cog):
                 elif queue_total_play_time + item.duration >= self._MAX_AUDIO_ALLOWED_TIME:
                     guild_.requires_download.extend(data[item_ind:])
                     break
+                elif item.duration == 0:
+                    guild_.requires_download.append(item)
                 else:
                     queue_total_play_time += item.duration
             except TypeError: # occurs when this is a stream
@@ -536,7 +550,17 @@ class Player(commands.Cog):
 
         for item in guild_.requires_download:
             if not isExist(item):
-                down_sesh = SingleDownloader(item, YT_DLP_SESH)
+                params = {
+                    'format': 'bestaudio/best',
+                    'extractaudio': True,
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': item.ext,
+                    }],
+                    'outtmpl': os.path.join(MUSIC_STORAGE, '%(id)s.%(ext)s') if hasattr(item, 'id') else os.path.join(MUSIC_STORAGE, '%(title)s.%(ext)s'),
+                }
+                sesh = YoutubeDL(params)
+                down_sesh = SingleDownloader(item, sesh)
                 await run_blocker(self._bot, down_sesh.download)
 
     async def disconnect(self, voice):
@@ -558,6 +582,7 @@ class Player(commands.Cog):
             refresh (bool, optional): Whether the bot is refreshing the player or not. Defaults to False.
         """
         guild_ = self._guild_sessions[ctx.guild.id]
+        guild_.is_active = True
 
         if not voice.is_playing():
             try:
@@ -568,7 +593,7 @@ class Player(commands.Cog):
                 await self.disconnect(voice)
                 return
             player = self.get_players(ctx, self._REFRESH_PLAYER) if refresh else self.get_players(ctx)
-
+            
             voice.play(
                 player,
                 after=lambda e:
@@ -610,7 +635,7 @@ class Player(commands.Cog):
         if guild_.loop:
             if guild_.loop_count is not None:
                 if guild_.loop_counter < list(guild_.loop_count.values())[0]:
-                    guild_.loop_counter += 1
+                    guild_.loop_count += 1
                 else:
                     guild_.loop = NO_LOOP
                     self.play_next(ctx)
@@ -650,6 +675,7 @@ class Player(commands.Cog):
         elif ctx.voice_client is None:
             pass
         elif not ctx.voice_client.is_playing():
+            guild_.is_active = False
             asyncio.run_coroutine_threadsafe(vc.disconnect(), self._bot.loop)
             asyncio.run_coroutine_threadsafe(ctx.send("Finished playing!"), ctx.bot.loop)
 
@@ -677,6 +703,7 @@ class Player(commands.Cog):
         """
         guild_id = ctx.guild.id
         guild_ = self._guild_sessions[guild_id]
+        guild_.is_active = False
         can_join_vc = self.peek_vc(ctx)
         if not can_join_vc:
             return await ctx.send("You need to be in a voice channel to use this command.")
@@ -780,7 +807,7 @@ class Player(commands.Cog):
 
             cur_playing_embed.add_field(
                 name="Currently playing",
-                value=f"**[{guild_.cur_song.title}]({guild_.cur_song.original_url})** ({_time_split(guild_.cur_song.duration)})\n"
+                value=f"**[{guild_.cur_song.title}]({guild_.cur_song.original_url})** ({parse_to_timestamp(guild_.cur_song.duration)})\n"
             )
 
             await ctx.send(embed=cur_playing_embed)

@@ -9,6 +9,10 @@ from constants import MUSIC_STORAGE
 
 class GuildSession:
     def __init__(self):
+        """ Represents a session in a guild.
+        A "session" starts when the bot joins the voice channel, 
+            and the "session" ends when the bot leaves the voice channel.
+        """
         self.queue: List[MediaMetadata] = list()                            # represents the queue that is being played in the voice channel
         self.request_queue: RequestQueue = RequestQueue()                   # represents the object that handles the loading of media
         self.loop: int = NO_LOOP                                            # represents whether the audio is looped or not in a guild
@@ -29,10 +33,15 @@ class GuildSession:
         self.requires_download: List[MediaMetadata] = list()                # represents the list of songs that requires downloading prior to playing
 
         self.timeout_timer = 0                                              # represents the current timer for the bot when there is no one else in the voice channel
-
+        self.is_active = False                                              # represents whether the guild is currently using the bot in voice channel or not.  
 
     @staticmethod
     def _delete_files(song_metadata: MediaMetadata):
+        """ Deletes the files correspond to the metadata given
+
+        Args:
+            song_metadata (MediaMetadata): _description_
+        """
         fp = os.path.join(MUSIC_STORAGE, f"{song_metadata.id}.mp3")
         try:
             if os.path.isfile(fp) or os.path.islink(fp):
@@ -61,3 +70,4 @@ class GuildSession:
         self.requires_download = list()
 
         self.timeout_timer = 0
+        self.is_active = False
