@@ -61,6 +61,65 @@ class MediaMetadata:
                  'url'
                  )
 
+    SUPPORTED_FILE_TYPES = [
+        '3gp', 'aa', 'aac', 'aax', 'act', 'aiff', 'alac', 'amr', 'ape', 'au',
+        'awb',
+        'dss',
+        'dvf',
+        'flac',
+        'gsm',
+        'iklax',
+        'ivs',
+        'm4a',
+        'm4b',
+        'm4p',
+        'mmf',
+        'movpkg',
+        'mp3',
+        'mpc',
+        'msv',
+        'nmf',
+        'ogg',
+        'oga',
+        'mogg',
+        'opus',
+        'ra',
+        'rm',
+        'raw',
+        'rf64',
+        'sln',
+        'tta',
+        'voc',
+        'vox',
+        'wav',
+        'wma',
+        'wv',
+        'webm',
+        '8svx',
+        'cda',
+        'webm',
+        'mkv',
+        'flv',
+        'vob',
+        'ogv',
+        'ogg',
+        'drc',
+        'gifv',
+        'webm', 'mpg',
+        'mp2',
+        'mpeg', 'mpe', 'mpv',
+        'ogg', 'mp4', 'm4p', 'm4v'
+        'avi', 'wmv',
+        'mov', 'qt'
+        'flv', 'swf'
+        'avchd',
+        'mts', 'm2ts', 'ts',
+        'yuv',
+        'rmvb',
+        'viv',
+        'amv'
+    ]
+
     def __init__(self, info_dict: dict):
         '''
         Keeps track of the metadata of a YouTube video for ease of access.
@@ -72,11 +131,13 @@ class MediaMetadata:
 
     @classmethod
     def from_title(cls, title: str, url: str):
-        return cls({'title': title, 'ext':'mp3', 'url': url, 'duration':0})
+        return cls({'title': title, 'ext':'mp3', 'original_url': url, 'duration':0})
     
     @classmethod
-    def from_title_extension(cls, title: str, extension: str, url: str):
-        return cls({'title': title, 'ext': extension, 'url': url, 'duration': 0})
+    def from_title_extension(cls, title: str, extension: str, url: str, **kwargs):
+        base_dict = {'title': title, 'ext': extension, 'original_url': url, 'duration': 0}
+        base_dict.update(kwargs)
+        return cls(base_dict)
 
     def __str__(self):
         try:
@@ -99,17 +160,12 @@ class MediaMetadata:
         else:
             return False
 
-    def to_dict(self):
-        return self._full_info
-
     def to_simple_dict(self):
         return {
             'title': self.title,
             'duration': self.duration,
             'url': self.original_url
         }
-
-
 
     def __key(self):
         return (self.id, self.title)       
