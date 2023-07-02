@@ -5,3 +5,5 @@ wheel
 ffmpeg
 pip
 python-dotenv
+librosa
+gdown
