@@ -10,7 +10,7 @@ from gdown.download_folder import _parse_google_drive_file, _GoogleDriveFile
 
 
 class GDriveLoader(BaseLoader):
-    def load(self, url: str) -> List[MediaMetadata]:
+    def load(self, url: str, **kwargs) -> List[MediaMetadata]:
         file_id, _ = parse_url(url)
         # we will try forcing the file_id first
         dl_url = "https://drive.google.com/uc?id={id}".format(id=file_id)

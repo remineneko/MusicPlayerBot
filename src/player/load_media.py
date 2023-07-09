@@ -38,7 +38,7 @@ class LoadMedia(DownloaderObservable):
        
     def _load_supported(self):
         if self._base_url_type in SITE_MAPPING:
-            data: List[MediaMetadata] = SITE_MAPPING[self._base_url_type]().load(self._url)
+            data: List[MediaMetadata] = SITE_MAPPING[self._base_url_type]().load(self._url, **self._kwargs)
         self.notify_observers()
         return data
 
@@ -52,7 +52,7 @@ class LoadMedia(DownloaderObservable):
                 to_return = [MediaMetadata.from_title_extension(file_name, file_ext, self._url)]
             else:
                 # if somehow the link provided is not a legitimate download file link, just delegate that to yt-dlp to handle it instead
-                to_return = YouTubeLoader().load(self._url)
+                to_return = YouTubeLoader().load(self._url, **self._kwargs)
         elif isinstance(self._url, Attachment):
             extension = self._url.filename.split(".")[-1]
             to_return = [MediaMetadata.from_title_extension(self._url.filename.replace(f".{extension}", ""), extension, self._url.url)]
