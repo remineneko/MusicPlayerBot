@@ -17,7 +17,7 @@ class Core(commands.Cog):
             
         embed.add_field(
             name = f"{BOT_PREFIX}play <url/query>",
-            value = "Plays the audio from the given url, or play a song chosen/auto-picked from the query.",
+            value = "Plays the audio from the given url, or play a song chosen/auto-picked from the query. Also supports loading from various links, such as Drive file and folder links, and uploads to Discord as attachment.",
             inline = False
         )
 
