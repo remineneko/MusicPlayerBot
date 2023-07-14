@@ -34,6 +34,19 @@ class Core(commands.Cog):
         )
 
         embed.add_field(
+            name=f"{BOT_PREFIX}playfromchapter",
+            value="Plays from a chapter from the video. Requires the video to have chapters.",
+            inline=False
+        )
+
+        embed.add_field(
+            name = f"{BOT_PREFIX}seek",
+            value="Seek to a certain point in the player.",
+            inline=False
+        )
+
+
+        embed.add_field(
             name = f"{BOT_PREFIX}pause",
             value = "Pauses the current media",
             inline = False
