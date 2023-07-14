@@ -44,7 +44,7 @@ class GuildSession:
         Args:
             song_metadata (MediaMetadata): _description_
         """
-        fp = os.path.join(MUSIC_STORAGE, f"{song_metadata.id}.mp3")
+        fp = os.path.join(MUSIC_STORAGE, f"{song_metadata.id}.{song_metadata.ext}")
         try:
             if os.path.isfile(fp) or os.path.islink(fp):
                 os.unlink(fp)
@@ -52,9 +52,6 @@ class GuildSession:
             print('Failed to delete %s. Reason: %s' % (fp, e))
 
     def reset(self):
-        bogus_queue = deepcopy(self.queue)
-        for item in bogus_queue:
-            self._delete_files(item)
         self.queue.clear()
         self.request_queue = RequestQueue()
         self.cur_song = None
