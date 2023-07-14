@@ -3,7 +3,7 @@ import os
 
 dotenv.load_dotenv()
 
-BOT_API_TOKEN = os.environ.get('BOT_API_TOKEN')
+TOKEN = os.environ.get('BOT_API_TOKEN')
 BOT_PREFIX = ">3"
 
 ROOT_FOLDER = os.path.dirname(os.path.realpath(__file__))
