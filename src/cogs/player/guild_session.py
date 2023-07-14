@@ -22,6 +22,8 @@ class GuildSession:
         self.loop_counter: int = 0                                          # represents how many times an audio has been looped. 
                                                                             # Again, this applies to the loop command with the number argument
 
+        self.task = None                                                    # represents the task that the bot has to do (primarily used when there is a downloading job to do)
+
         self.selected_chapter: Dict[MediaMetadata, int] = {}                # represents the selected chapter for the playchapter command
         self.song_title_suffix: Dict[MediaMetadata, str] = {}               # represents the suffix that the title has when playchapter is evoked
 
@@ -71,3 +73,9 @@ class GuildSession:
 
         self.timeout_timer = 0
         self.is_active = False
+
+        if self.task is not None:
+            self.task.cancel()
+            self.task = None
+        else:
+            self.task = None

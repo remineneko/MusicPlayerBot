@@ -12,6 +12,7 @@ from copy import deepcopy
 from typing import List, Dict
 import logging
 import os
+import gc
 import re
 import random
 from yt_dlp import YoutubeDL
@@ -109,6 +110,9 @@ class Player(commands.Cog):
                 if not any([guild.is_active for guild in self._guild_sessions.values()]):
                     self._file_cleanup()
 
+                gc.collect()
+                return
+
         if before.channel is not None:
             guild_ = self._guild_sessions[before.channel.guild.id]
             voice = discord.utils.get(self._bot.voice_clients , channel__guild__id = before.channel.guild.id)
@@ -148,6 +152,8 @@ class Player(commands.Cog):
                         self._cleanup(member)
                         if not any([guild.is_active for guild in self._guild_sessions.values()]):
                             self._file_cleanup()
+
+        
         
     def _file_cleanup(self):
         for file in os.listdir(MUSIC_STORAGE):
@@ -469,7 +475,7 @@ class Player(commands.Cog):
 
         """
         guild_ = self._guild_sessions[ctx.guild.id]
-        
+        print(data)
         queue_total_play_time = sum([int(i.duration) for i in guild_.queue]) if guild_.queue else 0
         for item_ind, item in enumerate(data):
             try:
@@ -480,6 +486,7 @@ class Player(commands.Cog):
                     guild_.requires_download.extend(data[item_ind:])
                     break
                 elif item.duration == 0:
+                    print(f"Added file {item.title} to the download queue.")
                     guild_.requires_download.append(item)
                 else:
                     queue_total_play_time += item.duration
@@ -508,7 +515,7 @@ class Player(commands.Cog):
 
         try:
             if guild_.requires_download:
-                self.bg_download_check.start(ctx)
+                guild_.task = self._bot.loop.create_task(self.bg_download_check(ctx))
         except RuntimeError:
             pass
         
@@ -518,7 +525,6 @@ class Player(commands.Cog):
         voice = ctx.voice_client
         await self.play_song(ctx, voice, overwrite_player=play_immediately)
     
-
     def filter_name(self, title):
         expr = re.compile(' \d{4}-\d{2}-\d{2} \d{2}:\d{2}')
         if expr.search(title):
@@ -538,7 +544,6 @@ class Player(commands.Cog):
             else:
                 guild_.cur_processing = False
 
-    @tasks.loop(seconds = 20)
     async def bg_download_check(self, ctx):
         """
         Processes the audio clips that requires downloading in the background.
