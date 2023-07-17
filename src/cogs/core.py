@@ -89,6 +89,12 @@ class Core(commands.Cog):
         )
 
         embed.add_field(
+            name= f'{BOT_PREFIX}remove/qremove <index>',
+            value='Removes a song from the queue. Index starts from 1.',
+            inline = False
+        )
+
+        embed.add_field(
             name = f"{BOT_PREFIX}clear",
             value = "Clears the current queue",
             inline = False
