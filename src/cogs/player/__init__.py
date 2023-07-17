@@ -525,6 +525,7 @@ class Player(commands.Cog):
         voice = ctx.voice_client
         await self.play_song(ctx, voice, overwrite_player=play_immediately)
     
+
     def filter_name(self, title):
         expr = re.compile(' \d{4}-\d{2}-\d{2} \d{2}:\d{2}')
         if expr.search(title):
@@ -854,6 +855,24 @@ class Player(commands.Cog):
                 await ctx.reply(embed = all_embeds[0], view = q_view)
         else:
             await ctx.send("I am not in any voice chat right now")
+
+    @commands.hybrid_command(name='remove', aliases=['qremove'])
+    async def remove_(self, ctx: commands.Context, remove_index: str):
+        can_join_vc = self.peek_vc(ctx)
+        if not can_join_vc:
+            return await ctx.send("You need to be in a voice channel to use this command.")
+
+        guild_id = ctx.guild.id
+        guild_ = self._guild_sessions[guild_id]
+
+        if guild_.queue:
+            if not remove_index.isdigit():
+                return await ctx.send("Please enter a number if you want to loop the current song a number of times.")
+            
+            removed_song: MediaMetadata = guild_.queue.pop(int(remove_index) - 1)
+            await ctx.send(f"Removed {removed_song.title} from the queue.")
+        else:
+            await ctx.send("The queue is empty! No song has been removed!")
 
     @commands.hybrid_command(name='clear')
     async def clear_(self, ctx):
