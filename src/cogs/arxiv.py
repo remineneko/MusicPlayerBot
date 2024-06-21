@@ -49,6 +49,17 @@ class arXiv(commands.Cog):
         task.start(ctx, query)
         await ctx.send("Subscribed! The bot will find new papers every hour under the provided query.")
     
+    @commands.hybrid_command(name='subscribe_list')
+    async def subscribe_list(self, ctx: commands.Context):
+        sub_list = self._find_guild_sesh(ctx).subscribe_list[ctx.author.id]
+        if len(sub_list) == 0:
+            return await ctx.send("You have not subscribed to any queries.")
+        queries = [list(e.keys())[0] for e in sub_list]
+
+        for query in queries:
+            await ctx.send(f"\t - {query}")
+
+
     async def _subscribe(self, ctx: commands.Context, query: str):
         sesh = self._find_guild_sesh(ctx)
         searcher = Search(
