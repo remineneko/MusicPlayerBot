@@ -4,6 +4,7 @@ import discord
 from arxiv import Client, Search, SortCriterion, Result
 from collections import defaultdict
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Tuple
 
@@ -58,6 +59,7 @@ class arXiv(commands.Cog):
 
         results = list(sesh.client.results(searcher))
 
+        print(f"Running the results for the run of {datetime.now()}.")
         time_now = datetime.now(tz=timezone.utc)
         time_before = time_now - timedelta(hours=2)
 
