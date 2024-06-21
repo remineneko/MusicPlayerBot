@@ -3,14 +3,16 @@ import discord
 
 from arxiv import Client, Search, SortCriterion, Result
 from collections import defaultdict
+from copy import deepcopy
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List
+from typing import Any, Dict, List, Tuple
 
 
 class arXivGuildSession:
     def __init__(self):
         self.client: Client = Client()
         self.prev_subs_search_res: List[Result] = list()
+        self.subscribe_list: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
 
 
 class arXiv(commands.Cog):
@@ -37,33 +39,68 @@ class arXiv(commands.Cog):
         *,
         query: str
     ):
+        sesh = self._find_guild_sesh(ctx)
+        task = tasks.loop(hours=1)(self._subscribe)
+        sesh.subscribe_list[ctx.author.id].append({
+            query: task
+        })
+        print(sesh.subscribe_list)
+        task.start(ctx, query)
         await ctx.send("Subscribed! The bot will find new papers every hour under the provided query.")
-        self._subscribe.start(ctx, query)
-
-    @tasks.loop(hours=1)
+    
     async def _subscribe(self, ctx: commands.Context, query: str):
+        sesh = self._find_guild_sesh(ctx)
         searcher = Search(
             query=query,
             max_results=100, # theres no way there will be more than 100 papers PER HOUR if anyone knows what they are looking for...
             sort_by=SortCriterion.SubmittedDate
         )
 
-        results = list(self._find_guild_sesh(ctx).client.results(searcher))
+        results = list(sesh.client.results(searcher))
 
         time_now = datetime.now(tz=timezone.utc)
-        time_before = time_now - timedelta(hours=1)
+        time_before = time_now - timedelta(hours=2)
+
+        if len(sesh.prev_subs_search_res) != 0:
+            results = [r for r in results if r not in sesh.prev_subs_search_res]
 
         # filtering results
         results = [r for r in results if r.published > time_before and r.published < time_now]
-        if len(list(results)) > 0:
+        if len(results) > 0:
             for result in results:
                 embed = self._build_embed(result)
                 await ctx.send(embed=embed)
+            
+            sesh.prev_subs_search_res.clear()
+            sesh.prev_subs_search_res = deepcopy(results)
 
     @commands.hybrid_command(name='unsubscribe_paper')
-    async def unsubscribe_paper(self, ctx: commands.Context):
-        await ctx.send("No longer subscribed to finding new papers.")
-        self._subscribe.stop()
+    async def unsubscribe_paper(self, ctx: commands.Context, *, query: str):
+        sub_list = self._find_guild_sesh(ctx).subscribe_list[ctx.author.id]
+        finding_query = [(index, i) for index, i in enumerate(sub_list) if list(i.keys())[0] == query]
+        print(finding_query)
+        if len(finding_query) == 0:
+            return await ctx.send("No task found with provided query.")
+        else:
+            associated_task = finding_query[0][1][query]
+            await ctx.send(f"No longer subscribed to finding new papers using the query {query}.")
+            associated_task.stop()
+            del sub_list[finding_query[0][0]]
+            
+
+    @commands.hybrid_command(name='unsubscribe_all')
+    async def unsubscribe_all(self, ctx: commands.Context):
+        sub_list = self._find_guild_sesh(ctx).subscribe_list[ctx.author.id]
+        all_tasks = [list(i.values())[0] for i in sub_list]
+        if len(all_tasks) == 0:
+            await ctx.send("No task found.")
+        else:
+            await ctx.send("No longer subscribed to finding new papers.")
+            for task in all_tasks:
+                task.stop()
+
+            sub_list.clear()
+            
 
     @commands.hybrid_command()
     async def findpaper(self, ctx: commands.Context, *, query: str):
