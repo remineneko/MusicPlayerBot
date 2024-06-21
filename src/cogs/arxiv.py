@@ -60,6 +60,11 @@ class arXiv(commands.Cog):
                 embed = self._build_embed(result)
                 await ctx.send(embed=embed)
 
+    @commands.hybrid_command(name='unsubscribe_paper')
+    async def unsubscribe_paper(self, ctx: commands.Context):
+        await ctx.send("No longer subscribed to finding new papers.")
+        self._subscribe.stop()
+
     @commands.hybrid_command()
     async def findpaper(self, ctx: commands.Context, *, query: str):
         searcher = Search(
