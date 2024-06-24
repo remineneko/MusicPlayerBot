@@ -6,7 +6,16 @@ from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
+from enum import Enum
 from typing import Any, Dict, List, Tuple
+
+import discord.ext
+import discord.ext.commands
+
+
+class SubscribeStatus(Enum):
+    ACTIVE = 0
+    INACTIVE = 1
 
 
 class arXivGuildSession:
@@ -27,11 +36,14 @@ class arXiv(commands.Cog):
         Args:
             bot (discord.ext.commands.Bot): The Discord Bot client.
         """
-        self._bot = bot
+        self._bot: discord.ext.commands.Bot = bot
         self._guild_sessions: Dict[int, arXivGuildSession] = defaultdict(lambda: arXivGuildSession())
 
     def _find_guild_sesh(self, ctx: commands.Context):
         return self._guild_sessions[ctx.guild.id]
+    
+    def _find_guild_sesh_by_id(self, g_id: int):
+        return self._guild_sessions[g_id]
 
     @commands.hybrid_command(name='subscribe_paper')
     async def subscribe_paper(
@@ -40,13 +52,19 @@ class arXiv(commands.Cog):
         *,
         query: str
     ):
+        channel_id = ctx.message.channel.id
+        guild_id = ctx.message.guild.id
         sesh = self._find_guild_sesh(ctx)
         task = tasks.loop(hours=1)(self._subscribe)
         sesh.subscribe_list[ctx.author.id].append({
-            query: task
+            query: task,
+            "channel": channel_id,
+            "guild": guild_id,
+            "status": SubscribeStatus.ACTIVE
         })
         print(sesh.subscribe_list)
-        task.start(ctx, query)
+        print(f"Starting searching papers for query {query}.")
+        task.start(query, channel_id, guild_id)
         await ctx.send("Subscribed! The bot will find new papers every hour under the provided query.")
     
     @commands.hybrid_command(name='subscribe_list')
@@ -59,30 +77,30 @@ class arXiv(commands.Cog):
         for query in queries:
             await ctx.send(f"\t - {query}")
 
-
-    async def _subscribe(self, ctx: commands.Context, query: str):
-        sesh = self._find_guild_sesh(ctx)
+    async def _subscribe(self, query: str, channel_id: int, guild_id: int):
+        sesh = self._find_guild_sesh_by_id(guild_id)
         searcher = Search(
             query=query,
-            max_results=100, # theres no way there will be more than 100 papers PER HOUR if anyone knows what they are looking for...
+            max_results=15, # theres no way there will be more than 100 papers PER HOUR if anyone knows what they are looking for...
             sort_by=SortCriterion.SubmittedDate
         )
 
         results = list(sesh.client.results(searcher))
 
         print(f"Running the results for the run of {datetime.now()}.")
-        time_now = datetime.now(tz=timezone.utc)
-        time_before = time_now - timedelta(hours=2)
+        # time_now = datetime.now(tz=timezone.utc)
+        # time_before = time_now - timedelta(hours=2)
 
         if len(sesh.prev_subs_search_res) != 0:
             results = [r for r in results if r not in sesh.prev_subs_search_res]
 
         # filtering results
-        results = [r for r in results if r.published > time_before and r.published < time_now]
+        # results = [r for r in results if r.published > time_before and r.published < time_now]
         if len(results) > 0:
+            print("New results are being added!")
             for result in results:
                 embed = self._build_embed(result)
-                await ctx.send(embed=embed)
+                await self._bot.get_guild(guild_id).get_channel(channel_id).send(embed=embed)
             
             sesh.prev_subs_search_res.clear()
             sesh.prev_subs_search_res = deepcopy(results)
